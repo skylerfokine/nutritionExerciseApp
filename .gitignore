@@ -1,3 +1,10 @@
+/server/.env
+/server/.env.*
+!/server/.env.example
+/client/.env
+/client/.env.*
+!/client/.env.example
+
 # Logs
 logs
 *.log
@@ -136,4 +143,4 @@ dist
 
 # Vite logs files
 vite.config.js.timestamp-*
-vite.config.ts.timestamp-*
+vite.config.ts.timestamp-
