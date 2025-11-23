@@ -38,3 +38,21 @@ https://www.kaggle.com/datasets/utsavdey1410/food-nutrition-dataset
 
 
 
+#Explaining File Structure 
+
+- Config/
+    Read and Validate Configuration. Fail Fast if something is missing (e.g. DB_PASS) and the rest of the code imports a configured object 
+    (environment & secrets single source of truth.)
+
+- db/
+    Infrastructure for persistence. Single Mysql pool in *pool.js* and Sessions persistence in *sessionStore.js* makes it so MYSQL logins survive server restarts
+
+- Routes/ 
+    URL contracts (Frontend and Backend Communication) + HTTP verbs (Your HTTP calls)
+    This directory makes it easier to scan APIS and add middleware routes if needed. 
+
+- Controllers/ 
+    HTTP layer (validate input, call models, manage sessions, pick status codes).
+
+- Models/ 
+    SQL layer (ohnly DB work, parameterized queries, Transactions)
