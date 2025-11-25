@@ -1,4 +1,5 @@
 import "dotenv/config"; // imports from file to setup global var
+import expressMysqlSession from "express-mysql-session";
 
 //require the .env
 const required = (name) => {

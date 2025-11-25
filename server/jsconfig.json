@@ -1,0 +1,14 @@
+// you can ignore this this is a config file for skyler 
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "commonjs",
+    "allowJs": true,
+    "checkJs": true,
+    "moduleResolution": "node",
+    "types": ["node"],
+    "strict": true
+  },
+  "include": ["**/*.js"]
+}
+
