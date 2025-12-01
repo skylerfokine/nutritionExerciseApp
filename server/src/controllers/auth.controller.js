@@ -1,3 +1,5 @@
+import * as z from "zod";
+
 export const debugLogin = (req, res) => {
   req.session.userId = 123; // pretend user #123
   req.session.email = "test@example.com";
@@ -24,3 +26,5 @@ export const logout = (req, res) => {
     res.json({ message: "logged_out" });
   });
 };
+
+export const register = (req, res) => {};
