@@ -7,7 +7,9 @@ import session from "express-session";
 import { config } from "./config/env.js";
 import { sessionStore } from "./db/sessionStore.js";
 import "./db/pool.js"; // side-effect: verifies DB on boot
-
+import { foodsRouter } from "./routes/foods.routes.js";
+import { exercisesRouter } from "./routes/exercises.routes.js";
+import { analyticsRouter } from "./routes/analytics.routes.js";
 import { authRouter } from "./routes/auth.routes.js";
 
 export function buildApp() {
@@ -55,7 +57,9 @@ export function buildApp() {
 
   // feature routes
   app.use("/auth", authRouter);
-
+  app.use("/foods", foodsRouter);
+  app.use("/exercises", exercisesRouter);
+  app.use("/analytics", analyticsRouter);
   // 404 fallback
   app.use((_, res) => res.status(404).json({ error: "not_found" }));
 
