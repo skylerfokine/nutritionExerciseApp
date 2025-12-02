@@ -56,3 +56,6 @@ https://www.kaggle.com/datasets/utsavdey1410/food-nutrition-dataset
 
 - Models/ 
     SQL layer (ohnly DB work, parameterized queries, Transactions)
+
+
+config → db → sessions → routes → controllers → models

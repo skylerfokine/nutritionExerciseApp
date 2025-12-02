@@ -1,0 +1,9 @@
+--THIS CREATES THE USERS TABLE FOR as of 11/25/25 im using it to test while i do the auth 
+CREATE TABLE IF NOT EXISTS users (
+  id INT PRIMARY KEY AUTO_INCREMENT,
+  email VARCHAR(255) NOT NULL UNIQUE,
+  display_name VARCHAR(100) NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  last_login_at TIMESTAMP NULL
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
