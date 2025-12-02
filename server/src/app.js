@@ -63,5 +63,17 @@ export function buildApp() {
   // 404 fallback
   app.use((_, res) => res.status(404).json({ error: "not_found" }));
 
+  // JSON error handler so errors don't render HTML
+  // (keep this as the last middleware)
+  app.use((err, req, res, next) => {
+    console.error("Unhandled error:", err);
+    res
+      .status(err.status || 500)
+      .json({
+        error: "server_error",
+        message: err.message ?? "Internal Server Error",
+      });
+  });
+
   return app;
 }

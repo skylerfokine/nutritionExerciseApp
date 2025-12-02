@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { getExerciseById } from "../models/exercises.model.js";
 import { createExerciseLog } from "../models/logs.model.js";
+import { searchExercises } from "../models/exercises.model.js";
+import { listExerciseLogs, deleteExerciseLog } from "../models/logs.model.js";
 
 const addExerciseLogSchema = z.object({
   exerciseId: z.number().int().positive(),
@@ -40,4 +42,60 @@ export const addExerciseLog = async (req, res) => {
   });
 
   return res.status(201).json({ id, logDate });
+};
+
+const searchQuery = z.object({
+  search: z.string().trim().optional(),
+  limit: z.coerce.number().int().min(1).max(100).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+export const listExercises = async (req, res) => {
+  const q = searchQuery.safeParse(req.query);
+  if (!q.success)
+    return res
+      .status(400)
+      .json({ error: "invalid_query", details: q.error.issues });
+  const rows = await searchExercises({
+    search: q.data.search ?? "",
+    limit: q.data.limit ?? 20,
+    offset: q.data.offset ?? 0,
+  });
+  return res.json({ items: rows });
+};
+
+const rangeQuery = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  limit: z.coerce.number().int().min(1).max(500).optional(),
+  offset: z.coerce.number().int().min(0).optional(),
+});
+export const listMyExerciseLogs = async (req, res) => {
+  if (!req.session?.userId)
+    return res.status(401).json({ error: "unauthorized" });
+  const q = rangeQuery.safeParse(req.query);
+  if (!q.success)
+    return res
+      .status(400)
+      .json({ error: "invalid_query", details: q.error.issues });
+  const rows = await listExerciseLogs({
+    userId: req.session.userId,
+    from: q.data.from,
+    to: q.data.to,
+    limit: q.data.limit ?? 100,
+    offset: q.data.offset ?? 0,
+  });
+  return res.json({ items: rows });
+};
+
+// Optional delete
+export const removeExerciseLog = async (req, res) => {
+  if (!req.session?.userId)
+    return res.status(401).json({ error: "unauthorized" });
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0)
+    return res.status(400).json({ error: "invalid_id" });
+  const ok = await deleteExerciseLog({ id, userId: req.session.userId });
+  return ok
+    ? res.status(204).end()
+    : res.status(404).json({ error: "not_found" });
 };
