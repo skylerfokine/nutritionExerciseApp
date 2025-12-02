@@ -2,6 +2,9 @@
 Class project app that you can use to keep track of caloric intake and track workouts
 
 
+# NOTE
+Before trying anything please makesure to execute all sql within the fitnessappsetup.sql 
+
 ## Exercise and Nutrition app
 - Exercise database (data base full of different type of exercises)
 - Food Database 
@@ -59,3 +62,6 @@ https://www.kaggle.com/datasets/utsavdey1410/food-nutrition-dataset
 
 
 config → db → sessions → routes → controllers → models
+
+
+
