@@ -1,87 +1,103 @@
-import React from 'react';
+import React from "react";
 
-//creates navigation bar at the top of the screen
-export default function Navbar({setPage}) {
-    return (
-        <nav style={styles.nav}>
-            <div style={styles.left}>
-                <button style={styles.linkButton}
-                  onMouseEnter={(e) => (e.target.style.backgroundColor = "#ddd")}
-                  onMouseLeave={(e) => (e.target.style.backgroundColor = "#fff")}
-                  onClick={() => setPage("home")}
-                >
-                  Dashboard
-                </button>
-                <button style={styles.linkButton}
-                  onMouseEnter={(e) => (e.target.style.backgroundColor = "#ddd")}
-                  onMouseLeave={(e) => (e.target.style.backgroundColor = "#fff")}
-                >
-                  Friends
-                </button>
-            </div>
+// Top nav with Dashboard, Profile, and Login/Register
+export default function Navbar({ setPage, isAuthenticated }) {
+  const handleClick = (target) => {
+    if (setPage) setPage(target);
+  };
 
-            <div style={styles.right}>
-                <button style={styles.authButton}  
-                  onMouseEnter={(e) => (e.target.style.backgroundColor = "#ddd")}
-                  onMouseLeave={(e) => (e.target.style.backgroundColor = "#fff")}
-                  onClick={() => setPage("login")}
-                >               
-                  Login
-                </button>
-                <button style={styles.authButton}  
-                  onMouseEnter={(e) => (e.target.style.backgroundColor = "#ddd")}
-                  onMouseLeave={(e) => (e.target.style.backgroundColor = "#fff")}
-                  onClick={() => setPage("register")}
-                >
-                  Register
-                </button>
-            </div>
-        </nav>
-    );
+  return (
+    <nav style={styles.nav}>
+      <div style={styles.left}>
+        <span style={styles.brand}>nutrifit</span>
+
+        <button
+          type="button"
+          style={styles.linkButton}
+          onClick={() => handleClick("dashboard")}
+        >
+          Dashboard
+        </button>
+
+        <button
+          type="button"
+          style={styles.linkButton}
+          onClick={() => handleClick("profile")}
+        >
+          Profile
+        </button>
+      </div>
+
+      <div style={styles.right}>
+        <button
+          type="button"
+          style={styles.authButton}
+          onClick={() => handleClick("auth")}
+        >
+          Login / Register
+        </button>
+      </div>
+    </nav>
+  );
 }
 
 const styles = {
   nav: {
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    padding: "10px 20px",
-    backgroundColor: "#000",   // black background
-    borderBottom: "1px solid #444",
-    width: "100%",  //spans full width of page
-    position: "fixed",  //fixed at top
-    top: 0, //at the very top
+    position: "fixed",
+    top: 0,
     left: 0,
+    right: 0,
+    height: "56px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "0 16px",
+    // darker, spacey gradient instead of pure white
+    backgroundImage:
+      "radial-gradient(circle at 0% 0%, #1d4ed8 0, #020617 40%, #020617 100%)",
+    borderBottom: "1px solid #1f2937",
     zIndex: 1000,
     boxSizing: "border-box",
+    boxShadow: "0 10px 25px rgba(0, 0, 0, 0.45)",
+    color: "#e5e7eb",
   },
   left: {
     display: "flex",
-    gap: "10px",
+    alignItems: "center",
+    gap: "8px",
   },
   right: {
     display: "flex",
-    gap: "10px",
+    alignItems: "center",
+    gap: "8px",
+  },
+  brand: {
+    fontWeight: 800,
+    fontSize: "1.05rem",
+    marginRight: "8px",
+    letterSpacing: "0.08em",
+    textTransform: "uppercase",
+    color: "#e5e7eb",
   },
   linkButton: {
-    backgroundColor: "#fff",  // white button
-    color: "#000",            // black text
     border: "none",
-    borderRadius: "6px",
-    padding: "6px 12px",
+    backgroundColor: "transparent",
+    padding: "6px 10px",
+    borderRadius: "999px",
     cursor: "pointer",
-    fontWeight: "bold",
-    transition: "0.2s",
+    fontSize: "0.9rem",
+    color: "#e5e7eb",
+    transition: "background-color 0.15s ease, color 0.15s ease, transform 0.1s",
   },
   authButton: {
-    backgroundColor: "#fff",  // white button
-    color: "#000",            // black text
+    backgroundColor: "#0ea5e9",
+    color: "#0b1120",
     border: "none",
-    borderRadius: "6px",
-    padding: "6px 12px",
+    borderRadius: "999px",
+    padding: "6px 14px",
     cursor: "pointer",
-    fontWeight: "bold",
-    transition: "0.2s",
+    fontSize: "0.9rem",
+    fontWeight: 600,
+    boxShadow: "0 6px 15px rgba(14, 165, 233, 0.5)",
   },
 };
-
