@@ -1,114 +1,111 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import "./App.css";
+
 import Navbar from "./components/navbar";
 import Login from "./components/login";
 import Register from "./components/register";
 import Dashboard from "./components/Dashboard";
 
-// basic stub user, will be overridden after login/register
-const defaultUser = {
-  id: "user-12345",
-  username: "DemoUser",
-  email: "demo@example.com",
-  avatarUrl: "",
-};
+import { apiGet, apiPost } from "./lib/api";
 
-function App() {
-  // "auth" = login/register screen, "dashboard" = main app
-  const [pageInternal, setPageInternal] = useState("auth");
-  const [user, setUser] = useState(defaultUser);
+export default function App() {
+  // auth/session state
+  const [user, setUser] = useState(null);
+  const [booting, setBooting] = useState(true);
 
-  const isAuthenticated = pageInternal === "dashboard";
+  // simple “routing” for this MVP
+  const [page, setPage] = useState("auth"); // 'auth' | 'dashboard'
+  const [mode, setMode] = useState("login"); // 'login' | 'register'
 
-  // wrapper so Navbar can still call setPage("home" | "login" | "register")
-  const setPage = (target) => {
-    if (target === "home" || target === "dashboard") {
-      setPageInternal("dashboard");
-    } else if (target === "login" || target === "register" || target === "auth") {
-      setPageInternal("auth");
-    } else {
-      setPageInternal(target);
-    }
-  };
+  // on first load, see if a session already exists
+  useEffect(() => {
+    (async () => {
+      try {
+        const me = await apiGet("/auth/me");
+        setUser(me);
+        setPage("dashboard");
+      } catch {
+        setUser(null);
+        setPage("auth");
+      } finally {
+        setBooting(false);
+      }
+    })();
+  }, []);
 
-  const handleAuthSuccess = (authUser) => {
-    // merge new info with existing user object
-    setUser((prev) => ({
-      ...prev,
-      ...authUser,
-    }));
-    setPageInternal("dashboard");
-  };
+  // callbacks passed to children
+  async function handleLoginSuccess() {
+    const me = await apiGet("/auth/me");
+    setUser(me);
+    setPage("dashboard");
+  }
 
-  const handleUserUpdate = (partial) => {
-    setUser((prev) => ({ ...prev, ...partial }));
-  };
+  async function handleRegisterSuccess() {
+    const me = await apiGet("/auth/me");
+    setUser(me);
+    setPage("dashboard");
+  }
+
+  async function handleLogout() {
+    try {
+      await apiPost("/auth/logout", {});
+    } catch (_) {}
+    setUser(null);
+    setPage("auth");
+  }
+
+  // loading screen while we check session
+  if (booting) {
+    return (
+      <div className="app-shell">
+        <Navbar
+          setPage={setPage}
+          isAuthenticated={!!user}
+          onLogout={handleLogout}
+        />
+        <main className="app-main">
+          <div className="loading">Loading…</div>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">
-      <Navbar setPage={setPage} isAuthenticated={isAuthenticated} />
+      <Navbar
+        setPage={setPage}
+        isAuthenticated={!!user}
+        onLogout={handleLogout}
+      />
 
       <main className="app-main">
-        {pageInternal === "auth" && (
-          <AuthScreen onAuthSuccess={handleAuthSuccess} />
+        {page === "auth" && (
+          <div className="auth-container">
+            <div className="auth-toggle">
+              <button
+                className={mode === "login" ? "auth-tab active" : "auth-tab"}
+                onClick={() => setMode("login")}
+              >
+                Login
+              </button>
+              <button
+                className={mode === "register" ? "auth-tab active" : "auth-tab"}
+                onClick={() => setMode("register")}
+              >
+                Register
+              </button>
+            </div>
+
+            {mode === "login" ? (
+              <Login onSuccess={handleLoginSuccess} />
+            ) : (
+              <Register onSuccess={handleRegisterSuccess} />
+            )}
+          </div>
         )}
 
-        {pageInternal === "dashboard" && (
-          <Dashboard user={user} onUserUpdate={handleUserUpdate} />
-        )}
+        {page === "dashboard" && <Dashboard user={user} />}
       </main>
     </div>
   );
 }
-
-function AuthScreen({ onAuthSuccess }) {
-  const [mode, setMode] = useState("login"); // "login" | "register"
-
-  const handleLoginSuccess = (formData) => {
-    const u = {
-      id: "user-12345",
-      username: formData.email?.split("@")[0] || "User",
-      email: formData.email,
-    };
-    onAuthSuccess(u);
-  };
-
-  const handleRegisterSuccess = (formData) => {
-    const u = {
-      id: "user-12345",
-      username: formData.username,
-      email: formData.email,
-    };
-    onAuthSuccess(u);
-  };
-
-  return (
-    <div className="auth-screen">
-      <div className="auth-toggle">
-        <button
-          type="button"
-          className={`auth-tab ${mode === "login" ? "auth-tab--active" : ""}`}
-          onClick={() => setMode("login")}
-        >
-          Login
-        </button>
-        <button
-          type="button"
-          className={`auth-tab ${mode === "register" ? "auth-tab--active" : ""}`}
-          onClick={() => setMode("register")}
-        >
-          Register
-        </button>
-      </div>
-
-      {/* We reuse your existing Login / Register components, just with a callback */}
-      {mode === "login" ? (
-        <Login onSuccess={handleLoginSuccess} />
-      ) : (
-        <Register onSuccess={handleRegisterSuccess} />
-      )}
-    </div>
-  );
-}
-
-export default App;

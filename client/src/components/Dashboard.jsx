@@ -1,7 +1,7 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { apiGet, apiPost, apiDelete, apiPatch } from "../lib/api";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
 const BODY_PARTS = [
   "Chest",
   "Back",
@@ -12,490 +12,634 @@ const BODY_PARTS = [
   "Full body",
 ];
 
-// Stub workout + meal data – later plug into your real datasets
-const MOCK_EXERCISES = [
-  { id: 1, name: "Bench Press" },
-  { id: 2, name: "Squat" },
-  { id: 3, name: "Deadlift" },
-  { id: 4, name: "Pull-ups" },
-  { id: 5, name: "Running (treadmill)" },
-  { id: 6, name: "Cycling (stationary)" },
-  { id: 7, name: "Overhead Press" },
-  { id: 8, name: "Lat Pulldown" },
-];
+// UI chip → dataset aliases
+const BODY_PART_ALIASES = {
+  Chest: ["chest", "pectorals", "pecs"],
+  Back: ["back", "upper back", "lower back", "lats", "latissimus"],
+  Legs: [
+    "legs",
+    "upper legs",
+    "lower legs",
+    "thighs",
+    "quadriceps",
+    "hamstrings",
+    "glutes",
+    "calves",
+  ],
+  Shoulders: ["shoulders", "delts", "deltoids"],
+  Arms: ["arms", "biceps", "triceps", "forearms"],
+  Core: ["core", "abs", "abdominals", "waist"],
+  "Full body": ["full body", "total body", "compound"],
+};
 
-const MOCK_MEALS = [
-  { id: 1, name: "Grilled chicken with rice", calories: 600 },
-  { id: 2, name: "Oatmeal with berries", calories: 350 },
-  { id: 3, name: "Greek yogurt and granola", calories: 280 },
-  { id: 4, name: "Protein shake", calories: 200 },
-  { id: 5, name: "Salmon with veggies", calories: 550 },
-  { id: 6, name: "Turkey sandwich", calories: 450 },
-  { id: 7, name: "Avocado toast", calories: 320 },
-];
-
-function filterByQuery(list, query) {
-  if (!query.trim()) return [];
-  const q = query.toLowerCase();
-  return list.filter((item) => item.name.toLowerCase().includes(q)).slice(0, 8);
+function matchesBodyPart(uiPart, value) {
+  if (!value) return false;
+  const v = String(value).toLowerCase();
+  const aliases = BODY_PART_ALIASES[uiPart] || [];
+  return aliases.some((a) => v.includes(a));
 }
 
-function getCalorieTargetForGoal(goal) {
-  switch (goal) {
-    case "Bulking":
-      return 2800;
-    case "Cutting":
-      return 2000;
-    case "Maintaining":
-    default:
-      return 2400;
-  }
+// dates
+function startOfWeekMonday(d = new Date()) {
+  const date = new Date(d);
+  const day = date.getDay(); // 0..6
+  const diffToMon = (day === 0 ? -6 : 1) - day;
+  date.setDate(date.getDate() + diffToMon);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+function addDays(date, n) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+function toISODate(date) {
+  const y = date.getFullYear(),
+    m = String(date.getMonth() + 1).padStart(2, "0"),
+    d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+}
+function kcalTarget(goal) {
+  return goal === "Cutting" ? 2000 : goal === "Bulking" ? 2800 : 2400;
 }
 
-export default function Dashboard({ user, onUserUpdate }) {
+export default function Dashboard({ user }) {
   const [selectedDayIndex, setSelectedDayIndex] = useState(0);
-
-  // profile / friends
-  const [avatarPreview, setAvatarPreview] = useState(user.avatarUrl || "");
-  const [outgoingRequests] = useState([
-    { id: "out-1", name: "alice" },
-    { id: "out-2", name: "gymBro42" },
-  ]);
-  const [incomingRequests, setIncomingRequests] = useState([
-    { id: "in-1", name: "charlie" },
-    { id: "in-2", name: "swoleSam" },
-  ]);
-
-  // weekly workout + meals
-  const [weeklyWorkoutPlan, setWeeklyWorkoutPlan] = useState(() =>
-    DAYS.map((day) => ({
-      day,
-      durationMinutes: 45,
-      bodyParts: [],
-      exercises: [],
-    }))
-  );
-
-  const [weeklyMealPlan, setWeeklyMealPlan] = useState(() =>
-    DAYS.map((day) => ({
-      day,
-      meals: [],
-    }))
-  );
-
   const [mealGoal, setMealGoal] = useState("Maintaining");
 
-  // search state
+  // searches
   const [workoutSearch, setWorkoutSearch] = useState("");
+  const [workoutSuggestions, setWorkoutSuggestions] = useState([]);
+  const [selectedBodyPart, setSelectedBodyPart] = useState(null);
+
   const [mealSearch, setMealSearch] = useState("");
+  const [mealSuggestions, setMealSuggestions] = useState([]);
 
-  const workoutSuggestions = filterByQuery(MOCK_EXERCISES, workoutSearch);
-  const mealSuggestions = filterByQuery(MOCK_MEALS, mealSearch);
-
-  const currentWorkout = weeklyWorkoutPlan[selectedDayIndex];
-  const currentMeals = weeklyMealPlan[selectedDayIndex];
-
-  const todayCalories = currentMeals.meals.reduce(
-    (sum, meal) => sum + (meal.calories || 0),
-    0
+  // week window
+  const [weekStart, setWeekStart] = useState(() =>
+    startOfWeekMonday(new Date()),
   );
-  const calorieTarget = getCalorieTargetForGoal(mealGoal);
+  const weekDays = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)),
+    [weekStart],
+  );
+  const from = toISODate(weekDays[0]),
+    to = toISODate(weekDays[6]);
 
-  // handlers
+  // logs
+  const [workoutLogsByDay, setWorkoutLogsByDay] = useState(() =>
+    Array.from({ length: 7 }, () => []),
+  );
+  const [foodLogsByDay, setFoodLogsByDay] = useState(() =>
+    Array.from({ length: 7 }, () => []),
+  );
+  const [macroDays, setMacroDays] = useState([]);
 
-  const handleAvatarChange = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const url = URL.createObjectURL(file);
-    setAvatarPreview(url);
-    onUserUpdate?.({ avatarUrl: url });
+  // inline edit state
+  const [editingId, setEditingId] = useState(null);
+  const [editSets, setEditSets] = useState("");
+  const [editReps, setEditReps] = useState("");
+  const [editWeight, setEditWeight] = useState("");
+  const [editDuration, setEditDuration] = useState("");
+  const [editError, setEditError] = useState("");
+
+  const todayKcal = foodLogsByDay[selectedDayIndex].reduce(
+    (s, f) => s + (Number(f.calories_kcal) || 0),
+    0,
+  );
+  const targetKcal = kcalTarget(mealGoal);
+
+  // load logs + macros for week
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [exRes, foodRes, macroRes] = await Promise.all([
+          apiGet("/exercises/logs", { from, to, limit: 500, offset: 0 }),
+          apiGet("/foods/logs", { from, to, limit: 500, offset: 0 }),
+          apiGet("/analytics/macros", { from, to }),
+        ]);
+        if (cancelled) return;
+
+        const exBuckets = Array.from({ length: 7 }, () => []);
+        (exRes.items || []).forEach((row) => {
+          const idx = (new Date(row.log_date).getDay() + 6) % 7; // Mon=0
+          exBuckets[idx].push({ ...row, display: `#${row.exercise_id}` });
+        });
+
+        const foodBuckets = Array.from({ length: 7 }, () => []);
+        (foodRes.items || []).forEach((row) => {
+          const idx = (new Date(row.log_date).getDay() + 6) % 7;
+          foodBuckets[idx].push({ ...row, display: `#${row.food_id}` });
+        });
+
+        setWorkoutLogsByDay(exBuckets);
+        setFoodLogsByDay(foodBuckets);
+        setMacroDays(macroRes.days || []);
+      } catch (e) {
+        console.error(e);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [from, to]);
+
+  // exercise search while typing
+  useEffect(() => {
+    const q = workoutSearch.trim();
+    if (!q) {
+      if (!selectedBodyPart) setWorkoutSuggestions([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const res = await apiGet("/exercises", { search: q, limit: 8 });
+        const items = (res.items || []).map((r) => ({
+          id: r.id,
+          name: r.title || r.name || `Exercise #${r.id}`,
+          body_part: r.body_part,
+        }));
+        setWorkoutSuggestions(items);
+      } catch {
+        setWorkoutSuggestions([]);
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [workoutSearch, selectedBodyPart]);
+
+  // muscle chip suggestions (when input empty)
+  useEffect(() => {
+    const run = async () => {
+      if (!selectedBodyPart || workoutSearch.trim()) return;
+      try {
+        const res = await apiGet("/exercises", { limit: 100 }); // obey server cap
+        const filtered = (res.items || [])
+          .filter((r) => matchesBodyPart(selectedBodyPart, r.body_part))
+          .slice(0, 5)
+          .map((r) => ({
+            id: r.id,
+            name: r.title || r.name || `Exercise #${r.id}`,
+            body_part: r.body_part,
+          }));
+        setWorkoutSuggestions(filtered);
+      } catch {
+        setWorkoutSuggestions([]);
+      }
+    };
+    run();
+  }, [selectedBodyPart, workoutSearch]);
+
+  // food search
+  useEffect(() => {
+    const q = mealSearch.trim();
+    if (!q) {
+      setMealSuggestions([]);
+      return;
+    }
+    const t = setTimeout(async () => {
+      try {
+        const res = await apiGet("/foods", { search: q, limit: 8 });
+        const items = (res.items || []).map((r) => ({
+          id: r.id,
+          name: r.name || `Food #${r.id}`,
+        }));
+        setMealSuggestions(items);
+      } catch {
+        setMealSuggestions([]);
+      }
+    }, 200);
+    return () => clearTimeout(t);
+  }, [mealSearch]);
+
+  /* ============== Actions (workouts) ============== */
+
+  // Select a suggestion → create log (name only), then auto-open inline edit
+  const handleAddExerciseToDay = async (dayIndex, exercise) => {
+    const logDate = toISODate(weekDays[dayIndex]);
+    try {
+      const created = await apiPost("/exercises/logs", {
+        exerciseId: exercise.id,
+        logDate,
+      });
+      setWorkoutLogsByDay((prev) => {
+        const next = prev.map((arr) => [...arr]);
+        next[dayIndex].unshift({
+          id: created.id,
+          exercise_id: exercise.id,
+          log_date: logDate,
+          display: exercise.name || `#${exercise.id}`,
+          sets: created.sets ?? null,
+          reps: created.reps ?? null,
+          weight_kg: created.weight_kg ?? null,
+          duration_min: created.duration_min ?? null,
+        });
+        return next;
+      });
+
+      // auto-open inline edit on the new row
+      setEditingId(created.id);
+      setEditError("");
+      setEditSets("");
+      setEditReps("");
+      setEditWeight("");
+      setEditDuration("");
+      setWorkoutSearch("");
+    } catch (e) {
+      console.error("add exercise log failed", e);
+    }
   };
 
-  const handleUsernameChange = (e) => {
-    onUserUpdate?.({ username: e.target.value });
+  const openEditExercise = (row) => {
+    setEditingId(row.id);
+    setEditError("");
+    setEditSets(row.sets ?? "");
+    setEditReps(row.reps ?? "");
+    setEditWeight(row.weight_kg ?? "");
+    setEditDuration(row.duration_min ?? "");
   };
 
-  const handleAcceptFriend = (id) => {
-    setIncomingRequests((prev) => prev.filter((r) => r.id !== id));
-    console.log("Accepted friend request:", id);
+  const cancelEditExercise = () => {
+    setEditingId(null);
+    setEditError("");
   };
 
-  const handleDeclineFriend = (id) => {
-    setIncomingRequests((prev) => prev.filter((r) => r.id !== id));
-    console.log("Declined friend request:", id);
+  const saveEditExercise = async (dayIndex, row) => {
+    setEditError("");
+    const body = {};
+    const num = (v) => (v === "" ? undefined : Number(v));
+
+    const setsVal = num(editSets);
+    const repsVal = num(editReps);
+    const weightVal = num(editWeight);
+    const durationVal = num(editDuration);
+
+    if (setsVal !== undefined && (!Number.isInteger(setsVal) || setsVal <= 0))
+      return setEditError("Sets must be a positive integer.");
+    if (repsVal !== undefined && (!Number.isInteger(repsVal) || repsVal <= 0))
+      return setEditError("Reps must be a positive integer.");
+    if (
+      weightVal !== undefined &&
+      (!Number.isFinite(weightVal) || weightVal < 0)
+    )
+      return setEditError("Weight must be ≥ 0.");
+    if (
+      durationVal !== undefined &&
+      (!Number.isFinite(durationVal) || durationVal <= 0)
+    )
+      return setEditError("Duration must be > 0.");
+
+    if (setsVal !== undefined) body.sets = setsVal;
+    if (repsVal !== undefined) body.reps = repsVal;
+    if (weightVal !== undefined) body.weight_kg = weightVal;
+    if (durationVal !== undefined) body.duration_min = durationVal;
+
+    try {
+      const updated = await apiPatch(`/exercises/logs/${row.id}`, body);
+      setWorkoutLogsByDay((prev) =>
+        prev.map((arr) =>
+          arr.map((r) => (r.id === row.id ? { ...r, ...updated } : r)),
+        ),
+      );
+      setEditingId(null);
+    } catch (e) {
+      setEditError(e?.data?.message || "Failed to save changes.");
+    }
   };
 
-  const updateWorkoutDay = (dayIndex, partial) => {
-    setWeeklyWorkoutPlan((prev) =>
-      prev.map((dayPlan, idx) =>
-        idx === dayIndex ? { ...dayPlan, ...partial } : dayPlan
-      )
-    );
+  const removeExercise = async (dayIndex, indexInList) => {
+    const row = workoutLogsByDay[dayIndex][indexInList];
+    if (!row) return;
+    try {
+      await apiDelete(`/exercises/logs/${row.id}`);
+      setWorkoutLogsByDay((prev) => {
+        const next = prev.map((arr) => [...arr]);
+        next[dayIndex].splice(indexInList, 1);
+        return next;
+      });
+    } catch (e) {
+      console.error("delete exercise log failed", e);
+    }
   };
 
-  const updateMealDay = (dayIndex, partial) => {
-    setWeeklyMealPlan((prev) =>
-      prev.map((dayPlan, idx) =>
-        idx === dayIndex ? { ...dayPlan, ...partial } : dayPlan
-      )
-    );
-  };
-
-  const toggleBodyPart = (dayIndex, part) => {
-    const current = weeklyWorkoutPlan[dayIndex];
-    const exists = current.bodyParts.includes(part);
-    const nextBodyParts = exists
-      ? current.bodyParts.filter((p) => p !== part)
-      : [...current.bodyParts, part];
-    updateWorkoutDay(dayIndex, { bodyParts: nextBodyParts });
-  };
-
-  const handleWorkoutDurationChange = (dayIndex, value) => {
-    const minutes = Number(value) || 0;
-    updateWorkoutDay(dayIndex, { durationMinutes: minutes });
-  };
-
-  const handleAddExerciseToDay = (dayIndex, exercise) => {
-    const current = weeklyWorkoutPlan[dayIndex];
-    if (current.exercises.some((e) => e.id === exercise.id)) return;
-    const nextExercises = [
-      ...current.exercises,
-      { ...exercise, sets: 3, reps: 10 },
-    ];
-    updateWorkoutDay(dayIndex, { exercises: nextExercises });
+  const toggleBodyPart = (part) => {
+    setSelectedBodyPart((prev) => (prev === part ? null : part));
     setWorkoutSearch("");
+    setEditingId(null);
   };
 
-  const handleUpdateExerciseField = (dayIndex, exerciseId, field, value) => {
-    const current = weeklyWorkoutPlan[dayIndex];
-    const nextExercises = current.exercises.map((ex) =>
-      ex.id === exerciseId ? { ...ex, [field]: Number(value) || 0 } : ex
-    );
-    updateWorkoutDay(dayIndex, { exercises: nextExercises });
+  /* ============== Actions (foods) ============== */
+
+  const addMeal = async (dayIndex, meal) => {
+    const logDate = toISODate(weekDays[dayIndex]);
+    try {
+      const created = await apiPost("/foods/logs", {
+        foodId: meal.id,
+        quantity: 1,
+        logDate,
+      });
+      setFoodLogsByDay((prev) => {
+        const next = prev.map((arr) => [...arr]);
+        next[dayIndex].unshift({
+          id: created.id,
+          food_id: meal.id,
+          log_date: logDate,
+          calories_kcal: created.calories_kcal,
+          protein_g: created.protein_g,
+          fat_g: created.fat_g,
+          carbs_g: created.carbs_g,
+          display: meal.name || `#${meal.id}`,
+        });
+        return next;
+      });
+      setMealSearch("");
+      try {
+        const macroRes = await apiGet("/analytics/macros", { from, to });
+        setMacroDays(macroRes.days || []);
+      } catch {}
+    } catch (e) {
+      console.error("add food log failed", e);
+    }
   };
 
-  const handleRemoveExercise = (dayIndex, exerciseId) => {
-    const current = weeklyWorkoutPlan[dayIndex];
-    const nextExercises = current.exercises.filter((ex) => ex.id !== exerciseId);
-    updateWorkoutDay(dayIndex, { exercises: nextExercises });
+  const removeMeal = async (dayIndex, indexInList) => {
+    const row = foodLogsByDay[dayIndex][indexInList];
+    if (!row) return;
+    try {
+      await apiDelete(`/foods/logs/${row.id}`);
+      setFoodLogsByDay((prev) => {
+        const next = prev.map((arr) => [...arr]);
+        next[dayIndex].splice(indexInList, 1);
+        return next;
+      });
+      try {
+        const macroRes = await apiGet("/analytics/macros", { from, to });
+        setMacroDays(macroRes.days || []);
+      } catch {}
+    } catch (e) {
+      console.error("delete food log failed", e);
+    }
   };
 
-  const handleAddMealToDay = (dayIndex, meal) => {
-    const current = weeklyMealPlan[dayIndex];
-    const nextMeals = [...current.meals, meal];
-    updateMealDay(dayIndex, { meals: nextMeals });
-    setMealSearch("");
-  };
-
-  const handleRemoveMealFromDay = (dayIndex, index) => {
-    const current = weeklyMealPlan[dayIndex];
-    const nextMeals = current.meals.filter((_, i) => i !== index);
-    updateMealDay(dayIndex, { meals: nextMeals });
-  };
+  /* ===================== UI ===================== */
 
   return (
     <div className="dashboard">
       <header className="dashboard-header">
-        <div>
-          <h1 className="dashboard-title">Dashboard</h1>
-          <p className="dashboard-subtitle">
-            Weekly schedule for workouts & meals. Currently viewing{" "}
-            <strong>{DAYS[selectedDayIndex]}</strong>.
-          </p>
+        <div className="dashboard-title-row">
+          <h1 className="dashboard-title">Your week</h1>
+          <div className="week-controls">
+            <button
+              className="chip"
+              onClick={() => setWeekStart(addDays(weekStart, -7))}
+            >
+              ← Prev
+            </button>
+            <button
+              className="chip"
+              onClick={() => setWeekStart(startOfWeekMonday(new Date()))}
+            >
+              This week
+            </button>
+            <button
+              className="chip"
+              onClick={() => setWeekStart(addDays(weekStart, +7))}
+            >
+              Next →
+            </button>
+          </div>
         </div>
+        <p className="dashboard-subtitle">
+          Weekly schedule for workouts & meals. Currently viewing{" "}
+          <strong>{from}</strong> → <strong>{to}</strong>.
+        </p>
         <DaySelector
           selectedIndex={selectedDayIndex}
-          onSelect={setSelectedDayIndex}
+          onSelect={(i) => {
+            setSelectedDayIndex(i);
+            setEditingId(null);
+          }}
         />
       </header>
 
-      <div className="dashboard-grid">
-        {/* Profile section */}
-        <section className="dashboard-card profile-section">
-          <h2 className="section-title">Profile</h2>
-          <div className="profile-main">
-            <div className="profile-avatar-wrapper">
-              {avatarPreview ? (
-                <img
-                  src={avatarPreview}
-                  alt="Profile"
-                  className="profile-avatar"
-                />
-              ) : (
-                <div className="profile-avatar profile-avatar--placeholder">
-                  {user.username?.[0]?.toUpperCase() || "U"}
-                </div>
-              )}
-              <label className="profile-upload-btn">
-                Change picture
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleAvatarChange}
-                  style={{ display: "none" }}
-                />
-              </label>
-            </div>
+      <section className="dashboard-grid">
+        {/* WORKOUTS */}
+        <div className="dashboard-card">
+          <h2 className="section-title">Workouts</h2>
 
-            <div className="profile-fields">
-              <label className="profile-field">
-                Username
-                <input
-                  type="text"
-                  value={user.username || ""}
-                  onChange={handleUsernameChange}
-                />
-              </label>
-
-              <label className="profile-field">
-                Email
-                <input type="email" value={user.email || ""} disabled />
-              </label>
-
-              <label className="profile-field">
-                User ID
-                <input type="text" value={user.id || ""} disabled />
-              </label>
+          <div className="workout-controls">
+            <div className="body-parts">
+              {BODY_PARTS.map((part) => {
+                const active = selectedBodyPart === part;
+                return (
+                  <button
+                    key={part}
+                    className={`chip ${active ? "chip--active" : ""}`}
+                    onClick={() => toggleBodyPart(part)}
+                  >
+                    {part}
+                  </button>
+                );
+              })}
             </div>
           </div>
 
-          <div className="friends-section">
-            <h3 className="subsection-title">Friends</h3>
+          <div className="workout-search-block">
+            <label>
+              Add exercise
+              <input
+                className="search-input"
+                type="text"
+                placeholder="Search workouts (e.g., bench, squat...)"
+                value={workoutSearch}
+                onChange={(e) => {
+                  setWorkoutSearch(e.target.value);
+                  setEditingId(null);
+                }}
+              />
+            </label>
 
-            <div className="friends-lists">
-              <div className="friends-column">
-                <h4 className="friends-heading">Outgoing requests</h4>
-                {outgoingRequests.length === 0 ? (
-                  <p className="empty-text">No outgoing requests.</p>
-                ) : (
-                  <ul className="simple-list">
-                    {outgoingRequests.map((req) => (
-                      <li key={req.id}>{req.name}</li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              <div className="friends-column">
-                <h4 className="friends-heading">Incoming requests</h4>
-                {incomingRequests.length === 0 ? (
-                  <p className="empty-text">No incoming requests.</p>
-                ) : (
-                  <ul className="simple-list">
-                    {incomingRequests.map((req) => (
-                      <li key={req.id} className="friend-request-item">
-                        <span>{req.name}</span>
-                        <div className="friend-request-actions">
-                          <button
-                            type="button"
-                            onClick={() => handleAcceptFriend(req.id)}
-                          >
-                            Accept
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeclineFriend(req.id)}
-                          >
-                            Decline
-                          </button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          </div>
-        </section>
-
-        {/* Workout section */}
-        <section className="dashboard-card workout-section">
-          <h2 className="section-title">
-            Workout – {DAYS[selectedDayIndex]}
-          </h2>
-
-          <p className="section-help">
-            View and edit your workout plan for this day. This mirrors your
-            weekly schedule.
-          </p>
-
-          <div className="workout-today">
-            <div className="field-inline">
-              <label>
-                Session duration (minutes)
-                <input
-                  type="number"
-                  min="0"
-                  value={currentWorkout.durationMinutes}
-                  onChange={(e) =>
-                    handleWorkoutDurationChange(selectedDayIndex, e.target.value)
-                  }
-                />
-              </label>
-            </div>
-
-            <div className="bodyparts-row">
-              <span className="bodyparts-label">Body parts:</span>
-              <div className="bodyparts-chips">
-                {BODY_PARTS.map((part) => {
-                  const active = currentWorkout.bodyParts.includes(part);
-                  return (
-                    <button
-                      key={part}
-                      type="button"
-                      className={`chip ${active ? "chip--active" : ""}`}
-                      onClick={() => toggleBodyPart(selectedDayIndex, part)}
-                    >
-                      {part}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="workout-search-block">
-              <label>
-                Add exercise
-                <input
-                  className="search-input"
-                  type="text"
-                  placeholder="Search workouts (e.g., bench, squat...)"
-                  value={workoutSearch}
-                  onChange={(e) => setWorkoutSearch(e.target.value)}
-                />
-              </label>
-
-              {workoutSearch && (
-                <ul className="suggestion-list">
-                  {workoutSuggestions.length === 0 ? (
-                    <li className="suggestion-item suggestion-empty">
-                      No matching exercises. This will eventually query your real
-                      workout dataset.
-                    </li>
-                  ) : (
-                    workoutSuggestions.map((exercise) => (
-                      <li key={exercise.id} className="suggestion-item">
-                        <button
-                          type="button"
-                          className="suggestion-button"
-                          onClick={() =>
-                            handleAddExerciseToDay(selectedDayIndex, exercise)
-                          }
-                        >
-                          {exercise.name}
-                        </button>
-                      </li>
-                    ))
-                  )}
-                </ul>
-              )}
-            </div>
-
-            <h3 className="subsection-title">Planned exercises</h3>
-            {currentWorkout.exercises.length === 0 ? (
-              <p className="empty-text">
-                No exercises yet. Add some from the search box above.
-              </p>
-            ) : (
-              <ul className="exercise-list">
-                {currentWorkout.exercises.map((ex) => (
-                  <li key={ex.id} className="exercise-item">
-                    <div className="exercise-main">
-                      <span className="exercise-name">{ex.name}</span>
-                      <div className="exercise-fields">
-                        <label>
-                          Sets
-                          <input
-                            type="number"
-                            min="0"
-                            value={ex.sets}
-                            onChange={(e) =>
-                              handleUpdateExerciseField(
-                                selectedDayIndex,
-                                ex.id,
-                                "sets",
-                                e.target.value
-                              )
-                            }
-                          />
-                        </label>
-                        <label>
-                          Reps
-                          <input
-                            type="number"
-                            min="0"
-                            value={ex.reps}
-                            onChange={(e) =>
-                              handleUpdateExerciseField(
-                                selectedDayIndex,
-                                ex.id,
-                                "reps",
-                                e.target.value
-                              )
-                            }
-                          />
-                        </label>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="small-danger-btn"
-                      onClick={() =>
-                        handleRemoveExercise(selectedDayIndex, ex.id)
-                      }
-                    >
-                      Remove
-                    </button>
+            {(workoutSearch ||
+              (selectedBodyPart && workoutSuggestions.length > 0)) && (
+              <ul className="suggestion-list">
+                {workoutSuggestions.length === 0 ? (
+                  <li className="suggestion-item suggestion-empty">
+                    {workoutSearch
+                      ? "No matching exercises."
+                      : "No exercises for this muscle group."}
                   </li>
-                ))}
+                ) : (
+                  workoutSuggestions.map((ex) => (
+                    <li key={ex.id} className="suggestion-item">
+                      <button
+                        className="suggestion-button"
+                        onClick={() =>
+                          handleAddExerciseToDay(selectedDayIndex, ex)
+                        }
+                        title={
+                          ex.body_part ? `Target: ${ex.body_part}` : undefined
+                        }
+                      >
+                        {ex.name}
+                      </button>
+                    </li>
+                  ))
+                )}
               </ul>
             )}
           </div>
 
-          <p className="section-help section-help--footer">
-            Weekly view: switch days at the top to adjust your plan for any day.
-          </p>
-        </section>
+          <ul className="item-list">
+            {workoutLogsByDay[selectedDayIndex].length === 0 ? (
+              <li className="item-muted">No workouts logged yet.</li>
+            ) : (
+              workoutLogsByDay[selectedDayIndex].map((w, index) => {
+                const isEditing = editingId === w.id;
+                return (
+                  <li key={w.id} className="item-row">
+                    <div className="item-main" style={{ width: "100%" }}>
+                      <span className="item-name">
+                        {w.display || `#${w.exercise_id}`}
+                      </span>
+                      {!isEditing && (
+                        <span className="item-meta" style={{ marginLeft: 8 }}>
+                          {w.sets ? `${w.sets}×` : ""}
+                          {w.reps ? `${w.reps}` : ""}
+                          {w.weight_kg ? ` @ ${w.weight_kg}kg` : ""}
+                          {w.duration_min ? ` · ${w.duration_min}min` : ""}
+                        </span>
+                      )}
 
-        {/* Meal plan section */}
-        <section className="dashboard-card meal-section">
-          <h2 className="section-title">
-            Meal plan – {DAYS[selectedDayIndex]}
-          </h2>
+                      {isEditing && (
+                        <div className="inline-form" style={inlineFormStyle}>
+                          <div style={inlineRow}>
+                            <label style={inlineLabel}>
+                              Sets
+                              <input
+                                className="search-input"
+                                type="number"
+                                min={1}
+                                step={1}
+                                value={editSets}
+                                onChange={(e) => setEditSets(e.target.value)}
+                                style={smallNumInput}
+                              />
+                            </label>
+                            <label style={inlineLabel}>
+                              Reps
+                              <input
+                                className="search-input"
+                                type="number"
+                                min={1}
+                                step={1}
+                                value={editReps}
+                                onChange={(e) => setEditReps(e.target.value)}
+                                style={smallNumInput}
+                              />
+                            </label>
+                            <label style={inlineLabel}>
+                              Weight (kg)
+                              <input
+                                className="search-input"
+                                type="number"
+                                min={0}
+                                step="0.5"
+                                value={editWeight}
+                                onChange={(e) => setEditWeight(e.target.value)}
+                                style={smallNumInput}
+                                placeholder="optional"
+                              />
+                            </label>
+                            <label style={inlineLabel}>
+                              Duration (min)
+                              <input
+                                className="search-input"
+                                type="number"
+                                min={1}
+                                step="1"
+                                value={editDuration}
+                                onChange={(e) =>
+                                  setEditDuration(e.target.value)
+                                }
+                                style={smallNumInput}
+                                placeholder="optional"
+                              />
+                            </label>
+                          </div>
 
-          <div className="meal-goal-row">
-            <label>
-              Goal
-              <select
-                value={mealGoal}
-                onChange={(e) => setMealGoal(e.target.value)}
-              >
-                <option value="Bulking">Bulking</option>
-                <option value="Cutting">Cutting</option>
-                <option value="Maintaining">Maintaining</option>
-              </select>
-            </label>
+                          {editError && <div style={errorBox}>{editError}</div>}
 
-            <div className="calorie-target">
-              <span className="calorie-target-label">Target:</span>
-              <span className="calorie-target-value">
-                {calorieTarget} kcal / day
-              </span>
-            </div>
+                          <div style={inlineActions}>
+                            <button
+                              className="chip"
+                              onClick={cancelEditExercise}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              className="chip"
+                              onClick={() =>
+                                saveEditExercise(selectedDayIndex, w)
+                              }
+                              style={{
+                                background: "#0ea5e9",
+                                color: "#0b1120",
+                              }}
+                            >
+                              Save
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {!isEditing && (
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button
+                          className="chip"
+                          onClick={() => openEditExercise(w)}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="small-danger-btn"
+                          onClick={() =>
+                            removeExercise(selectedDayIndex, index)
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
+                  </li>
+                );
+              })
+            )}
+          </ul>
+        </div>
+
+        {/* MEALS */}
+        <div className="dashboard-card">
+          <div className="section-title-row">
+            <h2 className="section-title">Meals</h2>
+            <select
+              value={mealGoal}
+              onChange={(e) => setMealGoal(e.target.value)}
+              className="goal-select"
+            >
+              <option>Cutting</option>
+              <option>Maintaining</option>
+              <option>Bulking</option>
+            </select>
           </div>
-
-          <p className="section-help">
-            Daily view: these meals and calories are for the selected day only.
-            Weekly schedule comes from editing each day via the day selector.
-          </p>
 
           <div className="meal-search-block">
             <label>
-              Add meal
+              Add meal / food
               <input
                 className="search-input"
                 type="text"
-                placeholder="Search meals (e.g., chicken, oatmeal...)"
+                placeholder="Search foods (e.g., chicken, rice...)"
                 value={mealSearch}
                 onChange={(e) => setMealSearch(e.target.value)}
               />
@@ -505,23 +649,16 @@ export default function Dashboard({ user, onUserUpdate }) {
               <ul className="suggestion-list">
                 {mealSuggestions.length === 0 ? (
                   <li className="suggestion-item suggestion-empty">
-                    No matching meals. This will eventually query your meals
-                    dataset.
+                    No matching foods.
                   </li>
                 ) : (
                   mealSuggestions.map((meal) => (
                     <li key={meal.id} className="suggestion-item">
                       <button
-                        type="button"
                         className="suggestion-button"
-                        onClick={() =>
-                          handleAddMealToDay(selectedDayIndex, meal)
-                        }
+                        onClick={() => addMeal(selectedDayIndex, meal)}
                       >
-                        <span>{meal.name}</span>
-                        <span className="suggestion-meta">
-                          {meal.calories} kcal
-                        </span>
+                        {meal.name}
                       </button>
                     </li>
                   ))
@@ -530,25 +667,25 @@ export default function Dashboard({ user, onUserUpdate }) {
             )}
           </div>
 
-          <h3 className="subsection-title">Meals for this day</h3>
-          {currentMeals.meals.length === 0 ? (
-            <p className="empty-text">
-              No meals logged yet. Add some from the search box above.
-            </p>
+          {foodLogsByDay[selectedDayIndex].length === 0 ? (
+            <div className="item-muted">No meals logged yet.</div>
           ) : (
-            <ul className="meal-list">
-              {currentMeals.meals.map((meal, index) => (
-                <li key={`${meal.id}-${index}`} className="meal-item">
-                  <div>
-                    <div className="meal-name">{meal.name}</div>
-                    <div className="meal-meta">{meal.calories} kcal</div>
+            <ul className="item-list">
+              {foodLogsByDay[selectedDayIndex].map((m, index) => (
+                <li key={m.id} className="item-row">
+                  <div className="item-main">
+                    <span className="item-name">
+                      {m.display || `#${m.food_id}`}
+                    </span>
+                    <span className="item-meta">
+                      {Math.round(m.calories_kcal)} kcal · P:
+                      {Math.round(m.protein_g)}g · F:{Math.round(m.fat_g)}g · C:
+                      {Math.round(m.carbs_g)}g
+                    </span>
                   </div>
                   <button
-                    type="button"
                     className="small-danger-btn"
-                    onClick={() =>
-                      handleRemoveMealFromDay(selectedDayIndex, index)
-                    }
+                    onClick={() => removeMeal(selectedDayIndex, index)}
                   >
                     Remove
                   </button>
@@ -561,18 +698,37 @@ export default function Dashboard({ user, onUserUpdate }) {
             <div className="meal-summary-row">
               <span>Calories today</span>
               <strong>
-                {todayCalories} / {calorieTarget} kcal
+                {Math.round(todayKcal)} / {targetKcal} kcal
               </strong>
             </div>
-            <div className="meal-summary-row">
-              <span>Weekly view</span>
-              <span>
-                Use the day selector above to configure meals for each day.
-              </span>
-            </div>
           </div>
-        </section>
-      </div>
+        </div>
+
+        {/* MACROS */}
+        <div className="dashboard-card">
+          <h2 className="section-title">Macro view (this week)</h2>
+          {macroDays.length === 0 ? (
+            <div className="item-muted">
+              No macro data yet — add meals to see totals.
+            </div>
+          ) : (
+            <ul className="item-list">
+              {macroDays.map((d) => (
+                <li key={d.log_date} className="item-row">
+                  <div className="item-main">
+                    <span className="item-name">{d.log_date}</span>
+                    <span className="item-meta">
+                      {Math.round(d.calories_kcal)} kcal · P:
+                      {Math.round(d.protein_g)}g · F:{Math.round(d.fat_g)}g · C:
+                      {Math.round(d.carbs_g)}g
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </section>
     </div>
   );
 }
@@ -583,10 +739,7 @@ function DaySelector({ selectedIndex, onSelect }) {
       {DAYS.map((day, idx) => (
         <button
           key={day}
-          type="button"
-          className={`day-chip ${
-            idx === selectedIndex ? "day-chip--active" : ""
-          }`}
+          className={`day-chip ${idx === selectedIndex ? "day-chip--active" : ""}`}
           onClick={() => onSelect(idx)}
         >
           {day}
@@ -596,3 +749,42 @@ function DaySelector({ selectedIndex, onSelect }) {
   );
 }
 
+// inline form styles
+const inlineFormStyle = {
+  marginTop: 10,
+  padding: "10px 12px",
+  border: "1px solid rgba(148,163,184,.25)",
+  borderRadius: 8,
+  background: "rgba(2,6,23,.5)",
+};
+const inlineRow = {
+  display: "grid",
+  gridTemplateColumns: "repeat(4, minmax(0,1fr))",
+  gap: 8,
+  alignItems: "end",
+  marginTop: 6,
+};
+const inlineLabel = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  color: "#e2e8f0",
+};
+const smallNumInput = {
+  padding: "8px",
+  borderRadius: 6,
+  border: "1px solid #555",
+  background: "rgba(2,6,23,.7)",
+  color: "#f9fafb",
+  outline: "none",
+};
+const inlineActions = { marginTop: 10, display: "flex", gap: 8 };
+const errorBox = {
+  marginTop: 8,
+  padding: "8px 10px",
+  borderRadius: 6,
+  border: "1px solid rgba(239,68,68,.35)",
+  background: "rgba(239,68,68,.12)",
+  color: "#fecaca",
+  fontSize: ".9rem",
+};

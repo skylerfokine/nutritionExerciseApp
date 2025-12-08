@@ -1,29 +1,40 @@
 import React, { useState } from "react";
+import { apiPost, apiGet } from "../lib/api";
 
-// combined login form; calls onSuccess(formData) on submit
 export default function Login({ onSuccess }) {
   const [formData, setFormData] = useState({
     email: "",
     password: "",
   });
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
   const handleChange = (e) => {
     setFormData((prev) => ({ ...prev, [e.target.name]: e.target.value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log("Login data:", formData);
+    setError("");
+    setLoading(true);
+    try {
+      await apiPost("/auth/login", {
+        email: formData.email,
+        password: formData.password,
+      });
 
-    // TODO: plug in real auth API here
-    if (onSuccess) {
-      onSuccess(formData);
+      const me = await apiGet("/auth/me");
+      onSuccess?.(me);
+    } catch (err) {
+      setError(err?.data?.message || "Login failed");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div style={styles.wrapper}>
-      <form style={styles.form} onSubmit={handleSubmit}>
+      <form onSubmit={handleSubmit} style={styles.form}>
         <h2 style={styles.title}>Log in</h2>
 
         <label style={styles.label}>
@@ -32,6 +43,7 @@ export default function Login({ onSuccess }) {
             style={styles.input}
             type="email"
             name="email"
+            autoComplete="email"
             value={formData.email}
             onChange={handleChange}
             required
@@ -44,14 +56,17 @@ export default function Login({ onSuccess }) {
             style={styles.input}
             type="password"
             name="password"
+            autoComplete="current-password"
             value={formData.password}
             onChange={handleChange}
             required
           />
         </label>
 
-        <button style={styles.button} type="submit">
-          Log in
+        {error && <div style={styles.error}>{error}</div>}
+
+        <button type="submit" style={styles.button} disabled={loading}>
+          {loading ? "Signing in..." : "Sign In"}
         </button>
       </form>
     </div>
@@ -74,34 +89,41 @@ const styles = {
     maxWidth: "360px",
     width: "100%",
     color: "#f9fafb",
-    boxShadow: "0 18px 40px rgba(0, 0, 0, 0.7)",
   },
-  title: {
-    marginTop: 0,
-    marginBottom: "1.5rem",
-    textAlign: "center",
-  },
+  title: { margin: 0, marginBottom: "1rem", fontSize: "1.25rem" },
   label: {
     display: "block",
-    fontSize: "0.9rem",
-    marginBottom: "1rem",
+    marginBottom: "0.75rem",
+    fontSize: "0.95rem",
   },
   input: {
+    marginTop: "0.35rem",
     width: "100%",
-    padding: "8px 10px",
-    marginTop: "4px",
+    padding: "10px",
     borderRadius: "6px",
-    border: "1px solid #ccc",
-    fontSize: "16px",
+    border: "1px solid #555",
+    background: "rgba(2,6,23,.7)",
+    color: "#f9fafb",
+    outline: "none",
   },
   button: {
     width: "100%",
     padding: "10px",
     borderRadius: "6px",
     border: "none",
-    backgroundColor: "#000",
-    color: "#fff",
-    fontWeight: "bold",
+    backgroundColor: "#0ea5e9",
+    color: "#001018",
+    fontWeight: 700,
     cursor: "pointer",
+    marginTop: "0.5rem",
+  },
+  error: {
+    background: "rgba(239,68,68,.15)",
+    border: "1px solid rgba(239,68,68,.35)",
+    color: "#fecaca",
+    padding: "8px 10px",
+    borderRadius: "6px",
+    margin: "0.5rem 0",
+    fontSize: "0.9rem",
   },
 };
