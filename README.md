@@ -82,10 +82,25 @@ GRANT ALL PRIVILEGES ON fitness_app_dev.* TO 'dev_user'@'localhost';
 FLUSH PRIVILEGES;
 
 ``````
+## 3) Quick-start: database import (pick Workbench **or** CLI)
 
-# How to import all data and tables using db/dump.sql
+### Option A — MySQL Workbench (GUI)
+1. **Server → Data Import**
+2. **Import from Self-Contained File** → select `Dump20251211.sql`.
+3. Keep **Dump Structure and Data**.
+4. Click **Start Import**.
+5. Open a new SQL tab to verify
 
 
+### Option B (cli)
+
+#### Use a user with CREATE privileges (root or your configured dev user)
+
+mysql -u root -p < Dump20251211.sql
+
+#### or
+
+mysql -u dev_user -p < Dump20251211.sql
 
 # Create a .env in server directory:
 
