@@ -22,7 +22,8 @@ Help users **log workouts and meals**, then visualize **weekly macros** and **le
 
 ## ER Diagram
 The ER diagram is included at:
-erdiagram.png
+
+Final_ER.png
 
 
 
