@@ -38,6 +38,14 @@ export default function Navbar({ setPage, isAuthenticated, onLogout }) {
             Logout
           </button>
         )}
+        {/* NEW: Leaderboards (public) */}
+        <button
+          style={styles.link}
+          onClick={() => setPage && setPage("leaderboards")}
+          title="See top users & popular exercises"
+        >
+          Leaderboards
+        </button>
       </div>
     </header>
   );

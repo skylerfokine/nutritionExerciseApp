@@ -5,6 +5,7 @@ import Navbar from "./components/navbar";
 import Login from "./components/login";
 import Register from "./components/register";
 import Dashboard from "./components/Dashboard";
+import Leaderboards from "./components/Leaderboards.jsx";
 
 import { apiGet, apiPost } from "./lib/api";
 
@@ -14,7 +15,7 @@ export default function App() {
   const [booting, setBooting] = useState(true);
 
   // simple “routing” for this MVP
-  const [page, setPage] = useState("auth"); // 'auth' | 'dashboard'
+  const [page, setPage] = useState("auth"); // 'auth' | 'dashboard' | 'leaderboards'
   const [mode, setMode] = useState("login"); // 'login' | 'register'
 
   // on first load, see if a session already exists
@@ -79,7 +80,11 @@ export default function App() {
       />
 
       <main className="app-main">
-        {page === "auth" && (
+        {page === "leaderboards" && <Leaderboards />}
+
+        {page === "dashboard" && !!user && <Dashboard user={user} />}
+
+        {(page === "auth" || (!user && page === "dashboard")) && (
           <div className="auth-container">
             <div className="auth-toggle">
               <button
@@ -103,8 +108,6 @@ export default function App() {
             )}
           </div>
         )}
-
-        {page === "dashboard" && <Dashboard user={user} />}
       </main>
     </div>
   );

@@ -5,7 +5,7 @@ import {
   listExercises,
   listMyExerciseLogs,
   removeExerciseLog,
-  updateExerciseLog, // ⬅️ NEW
+  updateExerciseLog,
 } from "../controllers/exercises.controller.js";
 
 export const exercisesRouter = Router();
@@ -19,7 +19,7 @@ exercisesRouter.get("/logs", requireAuth, listMyExerciseLogs);
 // add log (auth)
 exercisesRouter.post("/logs", requireAuth, addExerciseLog);
 
-// edit log (auth)  ⬅️ NEW
+// edit log (auth)
 exercisesRouter.patch("/logs/:id", requireAuth, updateExerciseLog);
 
 // delete log (auth)
